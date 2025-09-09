@@ -118,20 +118,46 @@ class nnUNet3DWeightLoader:
             raise FileNotFoundError(f"Checkpoint file not found: {path}")
             
         print(f"Loading nnU-Net checkpoint from: {path}")
-        checkpoint = torch.load(path, map_location='cpu')
+        
+        # Try loading with weights_only=True first (safer)
+        try:
+            checkpoint = torch.load(path, map_location='cpu', weights_only=True)
+            print("✓ Loaded checkpoint with weights_only=True (safe mode)")
+        except Exception as e:
+            print(f"⚠️  Safe loading failed: {e}")
+            print("⚠️  Attempting to load with weights_only=False (less safe but required for older checkpoints)")
+            
+            # For older nnU-Net checkpoints, we need to use weights_only=False
+            # and add safe globals for numpy serialization
+            try:
+                # Add safe globals for numpy serialization that nnU-Net uses
+                import torch.serialization
+                torch.serialization.add_safe_globals(['numpy.core.multiarray.scalar'])
+                
+                checkpoint = torch.load(path, map_location='cpu', weights_only=False)
+                print("✓ Loaded checkpoint with weights_only=False (compatibility mode)")
+            except Exception as e2:
+                print(f"✗ Both loading methods failed:")
+                print(f"  Safe loading error: {e}")
+                print(f"  Compatibility loading error: {e2}")
+                raise RuntimeError(f"Could not load checkpoint. Safe loading failed: {e}. Compatibility loading failed: {e2}")
         
         # Handle different checkpoint formats
         if isinstance(checkpoint, dict):
             if 'state_dict' in checkpoint:
                 state_dict = checkpoint['state_dict']
+                print("✓ Found 'state_dict' key in checkpoint")
             elif 'net' in checkpoint:
                 state_dict = checkpoint['net']
+                print("✓ Found 'net' key in checkpoint")
             else:
                 state_dict = checkpoint
+                print("✓ Using checkpoint as direct state dict")
         else:
             state_dict = checkpoint
+            print("✓ Checkpoint is direct state dict")
             
-        print(f"Loaded state dict with {len(state_dict)} parameters")
+        print(f"✓ Loaded state dict with {len(state_dict)} parameters")
         return state_dict
     
     def map_nnunet_to_unet3d(self, nnunet_state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
@@ -322,6 +348,61 @@ class nnUNet3DWeightLoader:
         print(f"Features per stage: {self.config_3d['architecture']['arch_kwargs']['features_per_stage']}")
         print(f"Normalization: {self.config_3d['normalization_schemes']}")
         print("="*50)
+
+
+# Utility function for safe nnU-Net checkpoint loading
+def load_nnunet_checkpoint_safe(checkpoint_path: str, map_location: str = 'cpu') -> Dict[str, torch.Tensor]:
+    """
+    Safely load nnU-Net checkpoint with proper error handling for PyTorch 2.6+.
+    
+    Args:
+        checkpoint_path: Path to nnU-Net checkpoint file
+        map_location: Device to load tensors to ('cpu' or 'cuda')
+        
+    Returns:
+        Dictionary containing the loaded state dict
+    """
+    if not os.path.exists(checkpoint_path):
+        raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
+    
+    print(f"Loading nnU-Net checkpoint: {checkpoint_path}")
+    
+    # Try safe loading first
+    try:
+        checkpoint = torch.load(checkpoint_path, map_location=map_location, weights_only=True)
+        print("✓ Loaded with weights_only=True (safe mode)")
+    except Exception as e:
+        print(f"⚠️  Safe loading failed: {e}")
+        print("⚠️  Using compatibility mode for older nnU-Net checkpoints...")
+        
+        # Add safe globals for numpy serialization
+        import torch.serialization
+        torch.serialization.add_safe_globals([
+            'numpy.core.multiarray.scalar',
+            'numpy.dtype',
+            'numpy.ndarray',
+            'numpy.core.multiarray._reconstruct'
+        ])
+        
+        try:
+            checkpoint = torch.load(checkpoint_path, map_location=map_location, weights_only=False)
+            print("✓ Loaded with weights_only=False (compatibility mode)")
+        except Exception as e2:
+            raise RuntimeError(f"Failed to load checkpoint. Safe mode: {e}. Compatibility mode: {e2}")
+    
+    # Extract state dict
+    if isinstance(checkpoint, dict):
+        if 'state_dict' in checkpoint:
+            state_dict = checkpoint['state_dict']
+        elif 'net' in checkpoint:
+            state_dict = checkpoint['net']
+        else:
+            state_dict = checkpoint
+    else:
+        state_dict = checkpoint
+    
+    print(f"✓ Loaded {len(state_dict)} parameters")
+    return state_dict
 
 
 # Convenience function for easy usage

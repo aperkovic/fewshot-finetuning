@@ -17,7 +17,7 @@ import argparse
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.nnunet_loader import nnUNet3DWeightLoader, load_nnunet_3d_weights
+from utils.nnunet_loader import nnUNet3DWeightLoader, load_nnunet_3d_weights, load_nnunet_checkpoint_safe
 from models.architectures.unet3d import UNet3D
 
 
@@ -89,8 +89,26 @@ def main():
         print(f"✗ Error loading model: {e}")
         return
     
+    # Test safe checkpoint loading
+    print("\n3. Testing safe checkpoint loading...")
+    try:
+        # Test the safe loading function directly
+        state_dict = load_nnunet_checkpoint_safe(args.checkpoint_path)
+        print(f"✓ Safe loading successful - loaded {len(state_dict)} parameters")
+        
+        # Show some example keys
+        print("Sample parameter keys:")
+        for i, key in enumerate(list(state_dict.keys())[:5]):
+            print(f"  {key}: {state_dict[key].shape}")
+        if len(state_dict) > 5:
+            print(f"  ... and {len(state_dict) - 5} more parameters")
+            
+    except Exception as e:
+        print(f"✗ Error during safe loading: {e}")
+        return
+
     # Test model inference
-    print("\n3. Testing model inference...")
+    print("\n4. Testing model inference...")
     try:
         model.eval()
         model = model.to(args.device)
@@ -113,7 +131,7 @@ def main():
         return
     
     # Model statistics
-    print("\n4. Model statistics...")
+    print("\n5. Model statistics...")
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     
