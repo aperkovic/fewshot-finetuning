@@ -195,6 +195,10 @@ def select_intensity_scaling(args):
     if "kipa" in args.data_txt_path["train"]:
         transform = ScaleIntensityRangePercentilesd(keys=["image"], lower=10, upper=90, b_min=args.model_cfg["b_min"],
                                                     b_max=args.model_cfg["b_max"], clip=True)
+    elif args.model_cfg.get("normalization") == "ZScoreNormalization":
+        # nnU-Net uses Z-score normalization instead of fixed intensity ranges
+        from monai.transforms import NormalizeIntensityd
+        transform = NormalizeIntensityd(keys=["image"], subtrahend=0.0, divisor=1.0, nonzero=True)
     else:
         transform = ScaleIntensityRanged(keys=["image"], a_min=args.model_cfg["a_min"], a_max=args.model_cfg["a_max"],
                                          b_min=args.model_cfg["b_min"], b_max=args.model_cfg["b_max"], clip=True)
