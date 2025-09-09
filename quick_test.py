@@ -53,12 +53,32 @@ def test_nnunet_loading():
             else:
                 state_dict = checkpoint
         
+        # Convert OrderedDict to regular dict if needed and extract actual tensors
+        if hasattr(state_dict, 'keys'):
+            # Check if this is a nested structure
+            actual_state_dict = {}
+            for key, value in state_dict.items():
+                if hasattr(value, 'shape'):  # This is a tensor
+                    actual_state_dict[key] = value
+                elif hasattr(value, 'keys'):  # This is another dict/OrderedDict
+                    for sub_key, sub_value in value.items():
+                        if hasattr(sub_value, 'shape'):  # This is a tensor
+                            actual_state_dict[f"{key}.{sub_key}"] = sub_value
+                        else:
+                            print(f"  Warning: Skipping non-tensor {key}.{sub_key}: {type(sub_value)}")
+                else:
+                    print(f"  Warning: Skipping non-tensor {key}: {type(value)}")
+            state_dict = actual_state_dict
+        
         print(f"\n✓ Successfully loaded {len(state_dict)} parameters!")
         
         # Show some example keys
         print("\nSample parameter keys:")
         for i, key in enumerate(list(state_dict.keys())[:5]):
-            print(f"  {key}: {state_dict[key].shape}")
+            if hasattr(state_dict[key], 'shape'):
+                print(f"  {key}: {state_dict[key].shape}")
+            else:
+                print(f"  {key}: {type(state_dict[key])}")
         
         if len(state_dict) > 5:
             print(f"  ... and {len(state_dict) - 5} more parameters")

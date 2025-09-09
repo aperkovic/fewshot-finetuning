@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import json
 import os
+import re
 from typing import Dict, Any, Optional, Tuple
 import warnings
 
@@ -144,7 +145,10 @@ class nnUNet3DWeightLoader:
         
         # Handle different checkpoint formats
         if isinstance(checkpoint, dict):
-            if 'state_dict' in checkpoint:
+            if 'network_weights' in checkpoint:
+                state_dict = checkpoint['network_weights']
+                print("✓ Found 'network_weights' key in checkpoint (nnU-Net format)")
+            elif 'state_dict' in checkpoint:
                 state_dict = checkpoint['state_dict']
                 print("✓ Found 'state_dict' key in checkpoint")
             elif 'net' in checkpoint:
@@ -171,99 +175,162 @@ class nnUNet3DWeightLoader:
             Mapped state dict compatible with project UNet3D
         """
         mapped_dict = {}
+        unmapped_keys = []
         
-        # Define mapping rules based on nnU-Net PlainConvUNet architecture
-        # This is a simplified mapping - in practice, you'd need to handle
-        # the specific nnU-Net PlainConvUNet architecture
+        print("Mapping nnU-Net PlainConvUNet to UNet3D architecture...")
         
         for key, value in nnunet_state_dict.items():
-            mapped_key = key
+            mapped_key = self._map_single_key(key)
             
-            # Remove common nnU-Net prefixes
-            if key.startswith('module.'):
-                mapped_key = key.replace('module.', '')
-            
-            # Map encoder layers
-            if 'encoder' in key:
-                # Map encoder stages to down transitions
-                if 'stage' in key:
-                    stage_num = self._extract_stage_number(key)
-                    if stage_num is not None:
-                        mapped_key = self._map_encoder_stage(key, stage_num)
-            
-            # Map decoder layers
-            elif 'decoder' in key:
-                # Map decoder stages to up transitions
-                if 'stage' in key:
-                    stage_num = self._extract_stage_number(key)
-                    if stage_num is not None:
-                        mapped_key = self._map_decoder_stage(key, stage_num)
-            
-            # Map final layer
-            elif 'seg_outputs' in key or 'final' in key:
-                mapped_key = 'classifier.final_conv.weight' if 'weight' in key else 'classifier.final_conv.bias'
-            
-            mapped_dict[mapped_key] = value
-            
-        print(f"Mapped {len(nnunet_state_dict)} parameters to {len(mapped_dict)} parameters")
+            if mapped_key:
+                mapped_dict[mapped_key] = value
+            else:
+                unmapped_keys.append(key)
+        
+        print(f"Mapped {len(mapped_dict)} parameters successfully")
+        if unmapped_keys:
+            print(f"Warning: {len(unmapped_keys)} parameters could not be mapped:")
+            for key in unmapped_keys[:10]:  # Show first 10 unmapped keys
+                print(f"  - {key}")
+            if len(unmapped_keys) > 10:
+                print(f"  ... and {len(unmapped_keys) - 10} more")
+        
         return mapped_dict
     
-    def _extract_stage_number(self, key: str) -> Optional[int]:
-        """Extract stage number from layer key."""
-        import re
-        match = re.search(r'stage(\d+)', key)
-        return int(match.group(1)) if match else None
+    def _map_single_key(self, key: str) -> Optional[str]:
+        """Map a single nnU-Net key to UNet3D format."""
+        
+        # Handle encoder stem (first layer)
+        if key.startswith('encoder.stem.convs.0.'):
+            if 'conv.weight' in key:
+                return 'down_tr64.ops.0.conv1.weight'
+            elif 'conv.bias' in key:
+                return 'down_tr64.ops.0.conv1.bias'
+            elif 'norm.weight' in key:
+                return 'down_tr64.ops.0.bn1.weight'
+            elif 'norm.bias' in key:
+                return 'down_tr64.ops.0.bn1.bias'
+        
+        # Handle encoder stages
+        if key.startswith('encoder.stages.'):
+            stage_match = re.match(r'encoder\.stages\.(\d+)', key)
+            if stage_match:
+                stage_num = int(stage_match.group(1))
+                return self._map_encoder_stage_key(key, stage_num)
+        
+        # Handle decoder stages (skip connections and upsampling)
+        if key.startswith('decoder.stages.'):
+            stage_match = re.match(r'decoder\.stages\.(\d+)', key)
+            if stage_match:
+                stage_num = int(stage_match.group(1))
+                return self._map_decoder_stage_key(key, stage_num)
+        
+        # Handle decoder transpose convolutions (upsampling)
+        if key.startswith('decoder.transpconvs.'):
+            transp_match = re.match(r'decoder\.transpconvs\.(\d+)', key)
+            if transp_match:
+                transp_num = int(transp_match.group(1))
+                return self._map_transpconv_key(key, transp_num)
+        
+        # Handle decoder segmentation layers (final outputs)
+        if key.startswith('decoder.seg_layers.'):
+            seg_match = re.match(r'decoder\.seg_layers\.(\d+)', key)
+            if seg_match:
+                seg_num = int(seg_match.group(1))
+                return self._map_seg_layer_key(key, seg_num)
+        
+        # Skip decoder.encoder.* keys (these are shared encoder weights)
+        if key.startswith('decoder.encoder.'):
+            return None  # Skip shared encoder weights in decoder
+        
+        return None  # Unmapped key
     
-    def _map_encoder_stage(self, key: str, stage_num: int) -> str:
-        """Map encoder stage to UNet3D down transition."""
+    def _map_encoder_stage_key(self, key: str, stage_num: int) -> Optional[str]:
+        """Map encoder stage key to UNet3D down transition."""
         stage_mapping = {
             0: 'down_tr64',
             1: 'down_tr128', 
             2: 'down_tr256',
-            3: 'down_tr512'
+            3: 'down_tr512',
+            4: 'down_tr512',  # Additional stage
+            5: 'down_tr512'   # Additional stage
         }
         
         if stage_num not in stage_mapping:
-            return key
+            return None
             
         base_name = stage_mapping[stage_num]
         
-        # Map specific layer types
-        if 'conv' in key and 'weight' in key:
+        # Map the first conv layer of the first block
+        if 'blocks.0.conv1.conv.weight' in key:
             return f"{base_name}.ops.0.conv1.weight"
-        elif 'conv' in key and 'bias' in key:
+        elif 'blocks.0.conv1.conv.bias' in key:
             return f"{base_name}.ops.0.conv1.bias"
-        elif 'norm' in key and 'weight' in key:
+        elif 'blocks.0.conv1.norm.weight' in key:
             return f"{base_name}.ops.0.bn1.weight"
-        elif 'norm' in key and 'bias' in key:
+        elif 'blocks.0.conv1.norm.bias' in key:
             return f"{base_name}.ops.0.bn1.bias"
         
-        return key
+        return None
     
-    def _map_decoder_stage(self, key: str, stage_num: int) -> str:
-        """Map decoder stage to UNet3D up transition."""
+    def _map_decoder_stage_key(self, key: str, stage_num: int) -> Optional[str]:
+        """Map decoder stage key to UNet3D up transition."""
         stage_mapping = {
-            0: 'up_tr64',
+            0: 'up_tr256',
             1: 'up_tr128',
-            2: 'up_tr256'
+            2: 'up_tr64',
+            3: 'up_tr64',   # Additional stage
+            4: 'up_tr64'    # Additional stage
         }
         
         if stage_num not in stage_mapping:
-            return key
+            return None
             
         base_name = stage_mapping[stage_num]
         
-        # Map specific layer types
-        if 'up' in key and 'weight' in key:
-            return f"{base_name}.up_conv.weight"
-        elif 'up' in key and 'bias' in key:
-            return f"{base_name}.up_conv.bias"
-        elif 'conv' in key and 'weight' in key:
+        # Map conv layers
+        if 'convs.0.conv.weight' in key:
             return f"{base_name}.ops.0.conv1.weight"
-        elif 'conv' in key and 'bias' in key:
+        elif 'convs.0.conv.bias' in key:
             return f"{base_name}.ops.0.conv1.bias"
+        elif 'convs.0.norm.weight' in key:
+            return f"{base_name}.ops.0.bn1.weight"
+        elif 'convs.0.norm.bias' in key:
+            return f"{base_name}.ops.0.bn1.bias"
         
-        return key
+        return None
+    
+    def _map_transpconv_key(self, key: str, transp_num: int) -> Optional[str]:
+        """Map transpose convolution key to UNet3D up convolution."""
+        transp_mapping = {
+            0: 'up_tr256',
+            1: 'up_tr128', 
+            2: 'up_tr64',
+            3: 'up_tr64',
+            4: 'up_tr64'
+        }
+        
+        if transp_num not in transp_mapping:
+            return None
+            
+        base_name = transp_mapping[transp_num]
+        
+        if 'weight' in key:
+            return f"{base_name}.up_conv.weight"
+        elif 'bias' in key:
+            return f"{base_name}.up_conv.bias"
+        
+        return None
+    
+    def _map_seg_layer_key(self, key: str, seg_num: int) -> Optional[str]:
+        """Map segmentation layer key to UNet3D classifier."""
+        if 'weight' in key:
+            return 'classifier.final_conv.weight'
+        elif 'bias' in key:
+            return 'classifier.final_conv.bias'
+        
+        return None
+    
     
     def load_weights_to_model(self, model: nn.Module, checkpoint_path: Optional[str] = None, 
                             strict: bool = False) -> nn.Module:
