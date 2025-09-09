@@ -74,6 +74,26 @@ def get_task_config(args):
                 # Target category in universal template (for aligning with pre-trained model)
                 args.universal_indexes = [UNIVERSAL_TEMPLATE[args.organ]]
 
+    #####
+    elif args.dataset == "oasis":
+        args.data_txt_path = PATH_PARTITIONS_TRANSFERABILITY + "oasis/"
+        args.data_txt_path = {'train': args.data_txt_path + '_train.txt',
+                              'test': args.data_txt_path + '_test.txt'}
+
+        args.ntest = 20
+        if args.organ == "selected":
+            args.selected_organs = ["left_hippocampus", "right_hippocampus", "left_lateral_ventricle", "right_lateral_ventricle", "left_inferior_lateral_ventricle", "right_inferior_lateral_ventricle"]
+
+            # Type of task
+            args.objective = "multiclass"
+            args.out_channels = len(args.selected_organs) + 1
+            # Target category in mask
+            print(list(ikey for ikey in args.selected_organs))
+            args.dataset_indexes = [OASIS_TEMPLATE[ikey] for ikey in args.selected_organs]
+            args.universal_indexes = [UNIVERSAL_TEMPLATE[ikey] for ikey in args.selected_organs]
+            
+    #####
+
     # Set list of training seeds (repetitions)
     if args.k >= 30:  # In the case of fine-tuning with all train subset, we only train once.
         args.folds = [1]

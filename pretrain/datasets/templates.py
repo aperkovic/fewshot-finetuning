@@ -3,8 +3,16 @@
 UNIVERSAL_TEMPLATE = {'spleen': 1, 'rkidney': 2, 'lkidney': 3, 'gall': 4, 'esophagus': 5, 'liver': 6, 'stomach': 7,
                       'aorta': 8, 'postcava': 9, 'psv': 10, 'pancreas': 11, 'radrenal': 12, 'ladrenal': 13,
                       'duodenum': 14, 'bladder': 15, 'prost_ut': 16, 'liver_tumor': 17, 'kidney_tumor': 18,
-                      'kidney_cyst': 19, 'celiac_truck': 20, 'rlung': 21, 'llung': 22, 'bone': 23, 'brain': 24,
-                      'lung_tumor': 25, 'pancreas_tumor': 26, 'hv': 27, 'hvt': 28, 'colon_tumor': 29}
+                      'kidney_cyst': 19, 'celiac_truck': 20, 'rlung': 21, 'llung': 22, 'bone': 23,
+                      # 'brain': 24, 'lung_tumor': 25, 'pancreas_tumor': 26, 'hv': 27, 'hvt': 28, 'colon_tumor': 29,
+                      
+        "left_hippocampus": 24,
+        "right_hippocampus": 25,
+        "left_lateral_ventricle": 26,
+        "right_lateral_ventricle": 27,
+        "left_inferior_lateral_ventricle": 28,
+        "right_inferior_lateral_ventricle": 29,
+    }
 
 # 01. BTCV (Multi-atlas)
 BTCV_TEMPLATE = {'spleen': 1, 'rkidney': 2, 'lkidney': 3, 'gall': 4, 'esophagus': 5, 'liver': 6, 'stomach': 7,
@@ -60,3 +68,12 @@ KIPA_TEMPLATE = {'rkidney': 1, 'kidney_tumor': 2, 'kidney_cyst': 3, 'lkidney': 5
 # 17_FLARE22
 FLARE_TEMPLATE = {'liver': 1, 'rkidney': 2, 'spleen': 3, 'pancreas': 4, 'aorta': 5, 'ivc': 6, 'rag': 7, 'lag': 8,
                   'gall': 9, 'esophagus': 10, 'stomach': 11, 'duodenum': 12, 'lkidney': 13}
+
+
+#######
+OASIS_TEMPLATE = { "left_hippocampus": 1, "right_hippocampus": 2, "left_lateral_ventricle": 3, "right_lateral_ventricle": 4,
+        "left_inferior_lateral_ventricle": 5,
+        "right_inferior_lateral_ventricle": 6,
+    }
+
+#######
